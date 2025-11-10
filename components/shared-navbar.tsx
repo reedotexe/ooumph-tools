@@ -1,7 +1,10 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs"
+import { useAuth } from "@/lib/auth-context"
+import { SignInModal } from "@/components/auth/sign-in-modal"
+import { SignUpModal } from "@/components/auth/sign-up-modal"
+import { UserButton } from "@/components/auth/user-button"
 import { ChevronDown } from "lucide-react"
 
 interface SharedNavbarProps {
@@ -11,12 +14,11 @@ interface SharedNavbarProps {
 export default function SharedNavbar({ currentPage }: SharedNavbarProps) {
   const [mounted, setMounted] = useState(false)
   const [isToolsDropdownOpen, setIsToolsDropdownOpen] = useState(false)
-  const [hasClerkKey, setHasClerkKey] = useState(false)
   const toolsDropdownRef = useRef<HTMLDivElement>(null)
+  const { user, loading } = useAuth()
 
   useEffect(() => {
     setMounted(true)
-    setHasClerkKey(!!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
 
     const handleClickOutside = (event: MouseEvent) => {
       if (toolsDropdownRef.current && !toolsDropdownRef.current.contains(event.target as Node)) {
@@ -146,41 +148,17 @@ export default function SharedNavbar({ currentPage }: SharedNavbarProps) {
             </div>
 
             <div className="flex items-center space-x-4">
-              {hasClerkKey ? (
+              {!loading && (
                 <>
-                  <SignedOut>
+                  {!user ? (
                     <div className="flex items-center space-x-2">
-                      <SignInButton mode="modal">
-                        <span className="px-4 py-2 text-sm font-medium text-foreground hover:text-primary transition-colors duration-200 cursor-pointer">
-                          Sign In
-                        </span>
-                      </SignInButton>
-                      <SignUpButton mode="modal">
-                        <span className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors duration-200 cursor-pointer">
-                          Sign Up
-                        </span>
-                      </SignUpButton>
+                      <SignInModal />
+                      <SignUpModal />
                     </div>
-                  </SignedOut>
-                  <SignedIn>
-                    <UserButton
-                      appearance={{
-                        elements: {
-                          avatarBox: "w-8 h-8",
-                        },
-                      }}
-                    />
-                  </SignedIn>
+                  ) : (
+                    <UserButton />
+                  )}
                 </>
-              ) : (
-                <div className="flex items-center space-x-2">
-                  <button className="px-4 py-2 text-sm font-medium text-muted-foreground cursor-not-allowed">
-                    Sign In
-                  </button>
-                  <button className="px-4 py-2 text-sm font-medium bg-muted text-muted-foreground rounded-md cursor-not-allowed">
-                    Sign Up
-                  </button>
-                </div>
               )}
             </div>
           </div>
