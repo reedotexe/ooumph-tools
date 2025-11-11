@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { Button } from '@/components/ui/button'
 import {
@@ -18,6 +19,7 @@ import { Loader2 } from 'lucide-react'
 
 export function SignUpModal() {
   const { signUp } = useAuth()
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -45,6 +47,8 @@ export function SignUpModal() {
     if (result.success) {
       setOpen(false)
       setFormData({ name: '', email: '', password: '', confirmPassword: '' })
+      // Redirect to onboarding check page
+      router.push('/onboarding/redirect')
     } else {
       setError(result.error || 'Failed to sign up')
     }

@@ -2,6 +2,8 @@
 
 import type React from "react"
 import { useState, useEffect, useRef } from "react"
+import { useAuth } from "@/lib/auth-context"
+import { useOnboardingCheck } from "@/hooks/use-onboarding-check"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -76,6 +78,10 @@ interface ParsedCampaignPlan {
 }
 
 export default function BrandbookTool() {
+  // Check onboarding status
+  useOnboardingCheck()
+  const { user } = useAuth()
+
   const [brandIdea, setBrandIdea] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [results, setResults] = useState<BrandBookResult | null>(null)
@@ -87,6 +93,22 @@ export default function BrandbookTool() {
   const [activeSection, setActiveSection] = useState("brand-overview")
   const toolsDropdownRef = useRef<HTMLDivElement>(null)
   const userDropdownRef = useRef<HTMLDivElement>(null)
+
+  // Pre-fill form with user profile data
+  useEffect(() => {
+    if (user?.profile) {
+      const profileInfo = [
+        user.profile.businessDescription,
+        user.profile.targetAudience && `Target Audience: ${user.profile.targetAudience}`,
+        user.profile.brandMission && `Mission: ${user.profile.brandMission}`,
+        user.profile.brandValues && `Values: ${user.profile.brandValues}`,
+        user.profile.valueProposition && `USP: ${user.profile.valueProposition}`,
+        user.profile.additionalInfo,
+      ].filter(Boolean).join('\n\n')
+      
+      setBrandIdea(profileInfo)
+    }
+  }, [user])
 
   useEffect(() => {
     setMounted(true)

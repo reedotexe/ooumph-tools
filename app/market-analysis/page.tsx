@@ -5,6 +5,8 @@ import SharedNavbar from "@/components/shared-navbar"
 
 import type React from "react"
 import { useState, useEffect } from "react"
+import { useAuth } from "@/lib/auth-context"
+import { useOnboardingCheck } from "@/hooks/use-onboarding-check"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -84,6 +86,10 @@ interface MarketAnalysisResult {
 }
 
 export default function MarketAnalysisApp() {
+  // Check onboarding status
+  useOnboardingCheck()
+  const { user } = useAuth()
+
   const [businessIdea, setBusinessIdea] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [results, setResults] = useState<MarketAnalysisResult | null>(null)
@@ -92,6 +98,20 @@ export default function MarketAnalysisApp() {
   const [mounted, setMounted] = useState(false)
   const [isToolsDropdownOpen, setIsToolsDropdownOpen] = useState(false)
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false)
+
+  // Pre-fill form with user profile data
+  useEffect(() => {
+    if (user?.profile) {
+      const profileInfo = [
+        user.profile.businessDescription,
+        user.profile.valueProposition && `Value Proposition: ${user.profile.valueProposition}`,
+        user.profile.industry && `Industry: ${user.profile.industry}`,
+        user.profile.targetAudience && `Target Audience: ${user.profile.targetAudience}`,
+      ].filter(Boolean).join('\n\n')
+      
+      setBusinessIdea(profileInfo)
+    }
+  }, [user])
 
   useEffect(() => {
     setMounted(true)

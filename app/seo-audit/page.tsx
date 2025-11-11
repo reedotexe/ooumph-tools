@@ -2,6 +2,8 @@
 
 import type React from "react"
 import { useState, useEffect, useRef } from "react"
+import { useAuth } from "@/lib/auth-context"
+import { useOnboardingCheck } from "@/hooks/use-onboarding-check"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -87,6 +89,10 @@ const isValidUrl = (string: string) => {
 }
 
 export default function SEOAuditTool() {
+  // Check onboarding status
+  useOnboardingCheck()
+  const { user } = useAuth()
+
   const [url, setUrl] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [results, setResults] = useState<AuditResult | null>(null)
@@ -97,6 +103,13 @@ export default function SEOAuditTool() {
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false)
   const toolsDropdownRef = useRef<HTMLDivElement>(null)
   const userDropdownRef = useRef<HTMLDivElement>(null)
+
+  // Pre-fill form with user profile data
+  useEffect(() => {
+    if (user?.profile?.website) {
+      setUrl(user.profile.website)
+    }
+  }, [user])
 
   useEffect(() => {
     setMounted(true)

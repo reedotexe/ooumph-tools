@@ -1,7 +1,9 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useAuth } from "@/lib/auth-context"
+import { useOnboardingCheck } from "@/hooks/use-onboarding-check"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -100,6 +102,10 @@ interface ContentIdeasData {
 export default function ContentIdeasPage() {
   console.log("[v0] Content Ideas Generator component rendering")
 
+  // Check onboarding status
+  useOnboardingCheck()
+  const { user } = useAuth()
+
   const [formData, setFormData] = useState({
     brand_name: "",
     business_description: "",
@@ -111,6 +117,20 @@ export default function ContentIdeasPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [results, setResults] = useState<ContentIdeasData | null>(null)
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set())
+
+  // Pre-fill form with user profile data
+  useEffect(() => {
+    if (user?.profile) {
+      setFormData({
+        brand_name: user.profile.brandName || user.profile.companyName || "",
+        business_description: user.profile.businessDescription || "",
+        monetization_approach: user.profile.monetizationApproach || "",
+        target_audience: user.profile.targetAudience || "",
+        platform_preferences: user.profile.platformPreferences || "",
+        additional_info: user.profile.additionalInfo || "",
+      })
+    }
+  }, [user])
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))

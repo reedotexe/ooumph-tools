@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { verifyToken } from '@/lib/auth'
+import { verifyTokenEdge } from '@/lib/auth-edge'
 
 // Routes that require authentication
 const protectedRoutes = [
@@ -10,6 +10,7 @@ const protectedRoutes = [
   '/content-ideas',
   '/landing-page-generator',
   '/linkedin-post-generator',
+  '/onboarding',
 ]
 
 export default async function middleware(request: NextRequest) {
@@ -32,7 +33,7 @@ export default async function middleware(request: NextRequest) {
     }
 
     // Verify token
-    const decoded = verifyToken(token)
+    const decoded = await verifyTokenEdge(token)
     if (!decoded) {
       // If token is invalid or expired, clear cookie and redirect
       const response = NextResponse.redirect(new URL('/', request.url))

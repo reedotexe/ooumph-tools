@@ -2,6 +2,8 @@
 
 import type React from "react"
 import { useState, useEffect } from "react"
+import { useAuth } from "@/lib/auth-context"
+import { useOnboardingCheck } from "@/hooks/use-onboarding-check"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -74,6 +76,10 @@ interface LandingPageData {
 }
 
 export default function LandingPageGeneratorPage() {
+  // Check onboarding status
+  useOnboardingCheck()
+  const { user } = useAuth()
+
   const [formData, setFormData] = useState({
     goal: "",
     audience: "",
@@ -88,6 +94,21 @@ export default function LandingPageGeneratorPage() {
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set())
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "tablet" | "mobile">("desktop")
   const [mermaidSvg, setMermaidSvg] = useState<string>("")
+
+  // Pre-fill form with user profile data
+  useEffect(() => {
+    if (user?.profile) {
+      setFormData({
+        goal: user.profile.contentGoals || "",
+        audience: user.profile.targetAudience || "",
+        offer: user.profile.valueProposition || "",
+        brand_voice: user.profile.brandVoice || "",
+        constraints: user.profile.constraints || "",
+        industry: user.profile.industry || "",
+        competitors: user.profile.competitors || "",
+      })
+    }
+  }, [user])
 
   useEffect(() => {
     mermaid.initialize({

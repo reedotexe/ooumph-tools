@@ -1,7 +1,9 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useAuth } from "@/lib/auth-context"
+import { useOnboardingCheck } from "@/hooks/use-onboarding-check"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -18,6 +20,10 @@ interface LinkedinPostData {
 }
 
 export default function LinkedinPostGeneratorPage() {
+  // Check onboarding status
+  useOnboardingCheck()
+  const { user } = useAuth()
+
   const [formData, setFormData] = useState({
     brandName: "",
     platformPreferences: "",
@@ -29,6 +35,20 @@ export default function LinkedinPostGeneratorPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [results, setResults] = useState<LinkedinPostData | null>(null)
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set())
+
+  // Pre-fill form with user profile data
+  useEffect(() => {
+    if (user?.profile) {
+      setFormData({
+        brandName: user.profile.brandName || user.profile.companyName || "",
+        platformPreferences: user.profile.platformPreferences || "",
+        monetizationApproach: user.profile.monetizationApproach || "",
+        targetAudience: user.profile.targetAudience || "",
+        additionalInformation: user.profile.additionalInfo || "",
+        businessDescription: user.profile.businessDescription || "",
+      })
+    }
+  }, [user])
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({

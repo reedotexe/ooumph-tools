@@ -8,6 +8,10 @@ interface User {
   name: string
   createdAt: string
   updatedAt: string
+  profile?: {
+    onboardingCompleted?: boolean
+    [key: string]: any
+  }
 }
 
 interface AuthContextType {

@@ -25,7 +25,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`font-sans ${inter.variable} tracking-tighter`}>
+      <body className={`font-sans ${inter.variable} tracking-tighter`} suppressHydrationWarning>
         <AuthProvider>
           <Suspense fallback={null}>{children}</Suspense>
           <Analytics />
