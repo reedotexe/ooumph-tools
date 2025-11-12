@@ -3,7 +3,9 @@
 import type React from "react"
 import { useState, useEffect } from "react"
 import { useAuth } from "@/lib/auth-context"
+import { useWorkflow } from "@/lib/workflow-context"
 import { useOnboardingCheck } from "@/hooks/use-onboarding-check"
+import { WorkflowNavigation, WORKFLOW_STEPS } from "@/components/workflow-navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -105,6 +107,7 @@ export default function ContentIdeasPage() {
   // Check onboarding status
   useOnboardingCheck()
   const { user } = useAuth()
+  const { getInputForAgent, setWorkflowData } = useWorkflow()
 
   const [formData, setFormData] = useState({
     brand_name: "",
@@ -118,19 +121,32 @@ export default function ContentIdeasPage() {
   const [results, setResults] = useState<ContentIdeasData | null>(null)
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set())
 
-  // Pre-fill form with user profile data
+  // Pre-fill form with user profile data OR workflow data from brandbook
   useEffect(() => {
-    if (user?.profile) {
-      setFormData({
-        brand_name: user.profile.brandName || user.profile.companyName || "",
-        business_description: user.profile.businessDescription || "",
-        monetization_approach: user.profile.monetizationApproach || "",
-        target_audience: user.profile.targetAudience || "",
-        platform_preferences: user.profile.platformPreferences || "",
-        additional_info: user.profile.additionalInfo || "",
-      })
+    // First priority: Use workflow data from brandbook if available
+    const workflowInput = getInputForAgent('content')
+    if (workflowInput?.brandContext) {
+      const bc = workflowInput.brandContext
+      setFormData(prev => ({
+        ...prev,
+        additional_info: `Brand Voice: ${bc.voiceAndTone || ''}\n\nMessaging Pillars: ${bc.messagingPillars?.join(', ') || ''}\n\nTaglines: ${bc.taglines?.join(', ') || ''}`,
+      }))
     }
-  }, [user])
+
+    // Second priority: Use user profile data
+    if (user?.profile) {
+      const profile = user.profile
+      setFormData(prev => ({
+        ...prev,
+        brand_name: profile.brandName || profile.companyName || prev.brand_name,
+        business_description: profile.businessDescription || prev.business_description,
+        monetization_approach: profile.monetizationApproach || prev.monetization_approach,
+        target_audience: profile.targetAudience || prev.target_audience,
+        platform_preferences: profile.platformPreferences || prev.platform_preferences,
+        additional_info: profile.additionalInfo || prev.additional_info,
+      }))
+    }
+  }, [user, getInputForAgent])
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
@@ -168,33 +184,104 @@ export default function ContentIdeasPage() {
     setIsLoading(true)
     console.log("[v0] Form submitted with data:", formData)
 
-    try {
-      const webhookUrl = process.env.NEXT_PUBLIC_CONTENT_IDEAS_WEBHOOK_URL || "https://n8n.ooumph.com/webhook/content-ideas-generator"
-      
-      console.log("[v0] Sending request to webhook:", webhookUrl)
-      
-      const response = await fetch(webhookUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
-      })
+    const maxRetries = 3
+    let attempt = 0
 
-      if (!response.ok) {
-        throw new Error("Failed to generate content ideas")
+    while (attempt < maxRetries) {
+      attempt++
+      let timeoutReached = false
+
+      try {
+        const webhookUrl = process.env.NEXT_PUBLIC_CONTENT_IDEAS_WEBHOOK_URL || "https://n8n.ooumph.com/webhook/content-ideas-generator"
+
+        console.log(`[v0] Sending request to webhook (attempt ${attempt}/${maxRetries}):`, webhookUrl)
+
+        const controller = new AbortController()
+
+        const timeoutId = setTimeout(() => {
+          timeoutReached = true
+          controller.abort()
+        }, 600000) // 10 minutes timeout
+
+        const response = await fetch(webhookUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            ...formData,
+            timestamp: new Date().toISOString(),
+            requestId: Math.random().toString(36).substring(7),
+          }),
+          signal: controller.signal,
+        })
+
+        clearTimeout(timeoutId)
+
+        console.log("[v0] Webhook response status:", response.status)
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.log("[v0] Webhook error response:", errorText)
+          throw new Error(`Content Ideas generation failed: ${response.status} ${response.statusText}`)
+        }
+
+        // Get response as text first to check if it's empty
+        const responseText = await response.text()
+        console.log("[v0] Raw response:", responseText)
+
+        if (!responseText || responseText.trim() === "") {
+          throw new Error("Webhook returned empty response")
+        }
+
+        // Try to parse JSON
+        let data
+        try {
+          data = JSON.parse(responseText)
+          console.log("[v0] Parsed response data:", data)
+        } catch (parseError) {
+          console.error("[v0] JSON parse error:", parseError)
+          console.log("[v0] Response text that failed to parse:", responseText)
+          throw new Error(`Invalid JSON response from webhook: ${parseError}`)
+        }
+
+        const contentData = Array.isArray(data) ? data[0] : data
+        setResults(contentData)
+
+        // Save to workflow context for next agent
+        setWorkflowData({
+          contentIdeas: {
+            result: contentData,
+            timestamp: new Date().toISOString(),
+          }
+        })
+
+        console.log("[v0] Content Ideas results saved to workflow context")
+        setIsLoading(false)
+        return // Success - exit the retry loop
+
+      } catch (error) {
+        console.error(`[v0] Error on attempt ${attempt}:`, error)
+
+        if (timeoutReached) {
+          console.log("[v0] Request timed out after 10 minutes")
+        }
+
+        // If this was the last attempt, show error
+        if (attempt >= maxRetries) {
+          console.error("[v0] All retry attempts failed")
+          alert(`Failed to generate content ideas after ${maxRetries} attempts. The n8n webhook may be unreachable. Please check:\n\n1. Is the n8n server running?\n2. Is the webhook URL correct in your .env file?\n3. Check browser console for details.`)
+        } else {
+          // Wait before retrying (exponential backoff)
+          const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000)
+          console.log(`[v0] Waiting ${waitTime}ms before retry...`)
+          await new Promise(resolve => setTimeout(resolve, waitTime))
+        }
       }
-
-      const data = await response.json()
-      console.log("[v0] Received response data:", data)
-
-      const contentData = Array.isArray(data) ? data[0] : data
-      setResults(contentData)
-    } catch (error) {
-      console.error("Error generating content ideas:", error)
-    } finally {
-      setIsLoading(false)
     }
+
+    setIsLoading(false)
   }
 
   if (results) {
@@ -293,7 +380,7 @@ export default function ContentIdeasPage() {
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {results["content writer output"]?.messaging_pillars &&
-                    typeof results["content writer output"].messaging_pillars === "object" ? (
+                      typeof results["content writer output"].messaging_pillars === "object" ? (
                       Object.entries(results["content writer output"].messaging_pillars).map(([key, value], index) => (
                         <div key={index} className="p-4 border rounded-lg bg-gray-50">
                           <div className="flex items-center justify-between mb-2">
@@ -693,6 +780,12 @@ export default function ContentIdeasPage() {
               </div>
             </TabsContent>
           </Tabs>
+
+          {/* Workflow Navigation */}
+          <WorkflowNavigation
+            currentAgent={WORKFLOW_STEPS['content-ideas'].name}
+            nextAgent={WORKFLOW_STEPS['content-ideas'].next}
+          />
         </div>
       </div>
     )

@@ -3,7 +3,9 @@
 import type React from "react"
 import { useState, useEffect } from "react"
 import { useAuth } from "@/lib/auth-context"
+import { useWorkflow } from "@/lib/workflow-context"
 import { useOnboardingCheck } from "@/hooks/use-onboarding-check"
+import { WorkflowNavigation, WORKFLOW_STEPS } from "@/components/workflow-navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -23,6 +25,7 @@ export default function LinkedinPostGeneratorPage() {
   // Check onboarding status
   useOnboardingCheck()
   const { user } = useAuth()
+  const { getInputForAgent, setWorkflowData } = useWorkflow()
 
   const [formData, setFormData] = useState({
     brandName: "",
@@ -36,19 +39,34 @@ export default function LinkedinPostGeneratorPage() {
   const [results, setResults] = useState<LinkedinPostData | null>(null)
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set())
 
-  // Pre-fill form with user profile data
+  // Pre-fill form with user profile data OR workflow data from content ideas
   useEffect(() => {
-    if (user?.profile) {
-      setFormData({
-        brandName: user.profile.brandName || user.profile.companyName || "",
-        platformPreferences: user.profile.platformPreferences || "",
-        monetizationApproach: user.profile.monetizationApproach || "",
-        targetAudience: user.profile.targetAudience || "",
-        additionalInformation: user.profile.additionalInfo || "",
-        businessDescription: user.profile.businessDescription || "",
-      })
+    // First priority: Use workflow data from content ideas if available
+    const workflowInput = getInputForAgent('linkedin')
+    if (workflowInput?.contentContext) {
+      const cc = workflowInput.contentContext
+      setFormData(prev => ({
+        ...prev,
+        platformPreferences: "LinkedIn",
+        targetAudience: workflowInput.targetAudience || prev.targetAudience,
+        additionalInformation: `Style Guide: ${cc.styleGuide?.voice || ''}\n\nContent Topics: ${cc.contentTopics?.map((t: any) => t.content_title).join(', ') || ''}`,
+      }))
     }
-  }, [user])
+
+    // Second priority: Use user profile data
+    if (user?.profile) {
+      const profile = user.profile
+      setFormData(prev => ({
+        ...prev,
+        brandName: profile.brandName || profile.companyName || prev.brandName,
+        platformPreferences: profile.platformPreferences || prev.platformPreferences,
+        monetizationApproach: profile.monetizationApproach || prev.monetizationApproach,
+        targetAudience: profile.targetAudience || prev.targetAudience,
+        additionalInformation: profile.additionalInfo || prev.additionalInformation,
+        businessDescription: profile.businessDescription || prev.businessDescription,
+      }))
+    }
+  }, [user, getInputForAgent])
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({
@@ -77,7 +95,7 @@ export default function LinkedinPostGeneratorPage() {
       ]
 
       const webhookUrl = process.env.NEXT_PUBLIC_LINKEDIN_POST_WEBHOOK_URL || "https://n8n.ooumph.com/webhook/linkedin-post"
-      
+
       console.log("[v0] Sending request to webhook:", webhookUrl, "with data:", requestData)
 
       const response = await fetch(webhookUrl, {
@@ -120,6 +138,16 @@ export default function LinkedinPostGeneratorPage() {
       console.log("[v0] Final post data:", postData)
 
       setResults(postData)
+
+      // Save to workflow context for next agent
+      setWorkflowData({
+        linkedinPost: {
+          result: postData,
+          timestamp: new Date().toISOString(),
+        }
+      })
+
+      console.log("[v0] LinkedIn Post results saved to workflow context")
     } catch (error) {
       console.error("[v0] Error generating LinkedIn post:", error)
 
@@ -414,6 +442,14 @@ export default function LinkedinPostGeneratorPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Workflow Navigation */}
+        {results && (
+          <WorkflowNavigation
+            currentAgent={WORKFLOW_STEPS['linkedin-post-generator'].name}
+            nextAgent={WORKFLOW_STEPS['linkedin-post-generator'].next}
+          />
+        )}
 
         {/* Features Section */}
         <div className="mt-12">

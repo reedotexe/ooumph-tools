@@ -3,6 +3,7 @@
 import type React from "react"
 import { useState, useEffect, useRef } from "react"
 import { useAuth } from "@/lib/auth-context"
+import { useWorkflow } from "@/lib/workflow-context"
 import { useOnboardingCheck } from "@/hooks/use-onboarding-check"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -92,6 +93,7 @@ export default function SEOAuditTool() {
   // Check onboarding status
   useOnboardingCheck()
   const { user } = useAuth()
+  const { getInputForAgent, setWorkflowData } = useWorkflow()
 
   const [url, setUrl] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -104,12 +106,20 @@ export default function SEOAuditTool() {
   const toolsDropdownRef = useRef<HTMLDivElement>(null)
   const userDropdownRef = useRef<HTMLDivElement>(null)
 
-  // Pre-fill form with user profile data
+  // Pre-fill form with user profile data OR workflow data from landing page
   useEffect(() => {
+    // First priority: Use workflow data from landing page if available
+    const workflowInput = getInputForAgent('seo')
+    if (workflowInput?.url) {
+      setUrl(workflowInput.url)
+      return
+    }
+
+    // Second priority: Use user profile website
     if (user?.profile?.website) {
       setUrl(user.profile.website)
     }
-  }, [user])
+  }, [user, getInputForAgent])
 
   useEffect(() => {
     setMounted(true)
@@ -234,6 +244,16 @@ export default function SEOAuditTool() {
     try {
       const auditData = await attemptAudit()
       setResults(auditData)
+
+      // Save to workflow context
+      setWorkflowData({
+        seoAudit: {
+          result: auditData,
+          timestamp: new Date().toISOString(),
+        }
+      })
+
+      console.log("[v0] SEO Audit results saved to workflow context")
     } catch (err) {
       console.error("[v0] Audit error:", err)
       let errorMessage = "Failed to audit website. Please try again."
@@ -334,14 +354,14 @@ ${results.performance_findings.issues.map((issue) => `• ${issue}`).join("\n")}
 PRIORITY FIXES
 ==============
 ${results.priority_fixes
-  .map(
-    (fix) => `
+          .map(
+            (fix) => `
 ${fix.priority}: ${fix.issue}
 Recommendation: ${fix.recommendation}
 Impact: ${fix.impact}
 `,
-  )
-  .join("\n")}
+          )
+          .join("\n")}
 
 PERFORMANCE & UX RECOMMENDATIONS
 ===============================

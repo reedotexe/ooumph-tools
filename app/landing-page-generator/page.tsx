@@ -3,7 +3,9 @@
 import type React from "react"
 import { useState, useEffect } from "react"
 import { useAuth } from "@/lib/auth-context"
+import { useWorkflow } from "@/lib/workflow-context"
 import { useOnboardingCheck } from "@/hooks/use-onboarding-check"
+import { WorkflowNavigation, WORKFLOW_STEPS } from "@/components/workflow-navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -79,6 +81,7 @@ export default function LandingPageGeneratorPage() {
   // Check onboarding status
   useOnboardingCheck()
   const { user } = useAuth()
+  const { getInputForAgent, setWorkflowData } = useWorkflow()
 
   const [formData, setFormData] = useState({
     goal: "",
@@ -95,20 +98,75 @@ export default function LandingPageGeneratorPage() {
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "tablet" | "mobile">("desktop")
   const [mermaidSvg, setMermaidSvg] = useState<string>("")
 
-  // Pre-fill form with user profile data
+  // Pre-fill form with user profile data OR workflow data from content ideas
   useEffect(() => {
-    if (user?.profile) {
-      setFormData({
-        goal: user.profile.contentGoals || "",
-        audience: user.profile.targetAudience || "",
-        offer: user.profile.valueProposition || "",
-        brand_voice: user.profile.brandVoice || "",
-        constraints: user.profile.constraints || "",
-        industry: user.profile.industry || "",
-        competitors: user.profile.competitors || "",
-      })
+    // First priority: Use workflow data from content ideas if available
+    const workflowInput = getInputForAgent('landingPage')
+    if (workflowInput?.contentContext) {
+      const cc = workflowInput.contentContext
+
+      // Extract visual identity from brandbook if available
+      let visualIdentityText = ''
+      if (workflowInput.brandContext?.visualIdentity) {
+        const vi = workflowInput.brandContext.visualIdentity
+        if (typeof vi === 'string') {
+          visualIdentityText = vi
+        } else if (typeof vi === 'object') {
+          visualIdentityText = JSON.stringify(vi, null, 2)
+        }
+      }
+
+      // Extract features from content strategy
+      let featuresText = ''
+      if (cc.contentPillars && Array.isArray(cc.contentPillars)) {
+        featuresText = cc.contentPillars.map((p: any) =>
+          `${p.name}: ${p.description}`
+        ).join('\n')
+      }
+
+      // Build comprehensive constraints from brand guidelines and style guide
+      let constraintsText = ''
+      if (cc.styleGuide) {
+        const sg = cc.styleGuide
+        constraintsText = `
+Brand Voice: ${sg.voice || ''}
+Tone: ${sg.tone || ''}
+Language Style: ${sg.language || ''}
+
+Do's:
+${sg.content_dos?.join('\n') || ''}
+
+Don'ts:
+${sg.content_donts?.join('\n') || ''}
+
+${visualIdentityText ? `\nVisual Identity:\n${visualIdentityText}` : ''}
+        `.trim()
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        brand_voice: workflowInput.brandVoice || cc.styleGuide?.voice || prev.brand_voice,
+        audience: workflowInput.targetAudience || prev.audience,
+        constraints: constraintsText || prev.constraints,
+        offer: featuresText || prev.offer,
+      }))
     }
-  }, [user])
+
+    // Second priority: Use user profile data
+    if (user?.profile) {
+      const profile = user.profile
+      setFormData(prev => ({
+        ...prev,
+        goal: profile.contentGoals || prev.goal,
+        audience: profile.targetAudience || prev.audience,
+        offer: profile.valueProposition || prev.offer,
+        brand_voice: profile.brandVoice || prev.brand_voice,
+        constraints: profile.constraints || prev.constraints,
+        industry: profile.industry || prev.industry,
+        competitors: profile.competitors || prev.competitors,
+      }))
+    }
+  }, [user, getInputForAgent])
 
   useEffect(() => {
     mermaid.initialize({
@@ -124,21 +182,25 @@ export default function LandingPageGeneratorPage() {
         try {
           let mermaidCode = results["mermaid wireframe"]
 
-          // Remove or escape problematic characters that break mermaid parsing
+          // Only do minimal sanitization - escape quotes in labels
           mermaidCode = mermaidCode
-            .replace(/"/g, "'") // Replace double quotes with single quotes
-            .replace(/\[([^\]]*)"([^"]*)"([^\]]*)\]/g, "[$1'$2'$3]") // Fix quotes in brackets
-            .replace(/$$([^)]*)"([^"]*)"([^)]*)$$/g, "($1'$2'$3)") // Fix quotes in parentheses
-            .replace(/:/g, " -") // Replace colons that might cause issues
-            .replace(/\s+/g, " ") // Normalize whitespace
+            .replace(/\["/g, '["')  // Keep opening quotes
+            .replace(/"\]/g, '"]')  // Keep closing quotes
             .trim()
 
-          console.log("[v0] Sanitized mermaid code:", mermaidCode.substring(0, 200))
+          // Ensure it starts with a valid mermaid diagram type
+          if (!mermaidCode.match(/^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie)/i)) {
+            console.warn("[v0] Mermaid code doesn't start with valid diagram type, prepending 'flowchart TB'")
+            mermaidCode = `flowchart TB\n${mermaidCode}`
+          }
+
+          console.log("[v0] Rendering mermaid code:", mermaidCode.substring(0, 200))
 
           const { svg } = await mermaid.render("mermaid-diagram", mermaidCode)
           setMermaidSvg(svg)
         } catch (error) {
           console.error("[v0] Error rendering mermaid diagram:", error)
+          console.error("[v0] Failed mermaid code:", results["mermaid wireframe"])
           setMermaidSvg("")
         }
       }
@@ -185,7 +247,7 @@ export default function LandingPageGeneratorPage() {
       console.log("[v0] Submitting landing page form with data:", JSON.stringify(formData))
 
       const webhookUrl = process.env.NEXT_PUBLIC_LANDING_PAGE_WEBHOOK_URL || "https://n8n.ooumph.com/webhook/landing-page-generator"
-      
+
       console.log("[v0] Sending request to webhook:", webhookUrl)
 
       const response = await fetch(webhookUrl, {
@@ -242,6 +304,16 @@ export default function LandingPageGeneratorPage() {
       }
 
       setResults(landingPageData)
+
+      // Save to workflow context for next agent
+      setWorkflowData({
+        landingPage: {
+          result: landingPageData,
+          timestamp: new Date().toISOString(),
+        }
+      })
+
+      console.log("[v0] Landing Page results saved to workflow context")
     } catch (error) {
       console.error("[v0] Error generating landing page:", error)
 
@@ -752,14 +824,12 @@ export default function LandingPageGeneratorPage() {
                           {test.variants.map((variant, variantIndex) => (
                             <div
                               key={variantIndex}
-                              className={`p-3 rounded border-l-4 ${
-                                variantIndex === 0 ? "bg-blue-50 border-blue-500" : "bg-green-50 border-green-500"
-                              }`}
+                              className={`p-3 rounded border-l-4 ${variantIndex === 0 ? "bg-blue-50 border-blue-500" : "bg-green-50 border-green-500"
+                                }`}
                             >
                               <h5
-                                className={`font-medium mb-1 ${
-                                  variantIndex === 0 ? "text-blue-800" : "text-green-800"
-                                }`}
+                                className={`font-medium mb-1 ${variantIndex === 0 ? "text-blue-800" : "text-green-800"
+                                  }`}
                               >
                                 Variant {String.fromCharCode(65 + variantIndex)}
                               </h5>
@@ -776,6 +846,12 @@ export default function LandingPageGeneratorPage() {
               </Card>
             </TabsContent>
           </Tabs>
+
+          {/* Workflow Navigation */}
+          <WorkflowNavigation
+            currentAgent={WORKFLOW_STEPS['landing-page-generator'].name}
+            nextAgent={WORKFLOW_STEPS['landing-page-generator'].next}
+          />
         </div>
       </div>
     )

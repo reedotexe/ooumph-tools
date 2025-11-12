@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { AuthProvider } from "@/lib/auth-context"
+import { WorkflowProvider } from "@/lib/workflow-context"
 import "./globals.css"
 import { Suspense } from "react"
 
@@ -27,8 +28,10 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`font-sans ${inter.variable} tracking-tighter`} suppressHydrationWarning>
         <AuthProvider>
-          <Suspense fallback={null}>{children}</Suspense>
-          <Analytics />
+          <WorkflowProvider>
+            <Suspense fallback={null}>{children}</Suspense>
+            <Analytics />
+          </WorkflowProvider>
         </AuthProvider>
       </body>
     </html>
